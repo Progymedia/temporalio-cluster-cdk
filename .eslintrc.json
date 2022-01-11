@@ -1,0 +1,33 @@
+// FIXME JWH: https://github.com/microsoft/TypeScript/blob/main/.eslintrc.json
+{
+    "root": true,
+    "parser": "@typescript-eslint/parser",
+
+    "parserOptions": {
+        "ecmaVersion": 2020, // Allows for the parsing of modern ECMAScript features
+        "sourceType": "module", // Allows for the use of imports
+        "ecmaFeatures": {
+            "jsx": true // Allows for the parsing of JSX
+        },
+        "project": ["./packages/*/tsconfig.json", "./packages/*/scripts/tsconfig.json"]
+    },
+
+    "plugins": ["@typescript-eslint"],
+    "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/eslint-recommended",
+        "plugin:@typescript-eslint/recommended",
+        "prettier"
+    ],
+    "rules": {
+        "eqeqeq": ["error", "always"],
+        "no-unused-vars": "off",
+        "@typescript-eslint/no-unused-vars": [
+            "warn",
+            {
+                "argsIgnorePattern": "^_",
+                "caughtErrorsIgnorePattern": "^ignore"
+            }
+        ]
+    }
+}
