@@ -1,6 +1,7 @@
 {
-    "files": [],
     "compilerOptions": {
+        "rootDir": "./lib",
+        "outDir": "./dist",
         "allowJs": false,
         "target": "ES2020",
         "module": "CommonJS",
@@ -10,5 +11,6 @@
         "esModuleInterop": true,
         "resolveJsonModule": true
     },
+    "include": ["./lib/**/*.ts"],
     "exclude": ["**/node_modules"]
 }

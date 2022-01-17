@@ -1,13 +1,19 @@
 {
     "name": "@progymedia/temporal-cluster-cdk",
     "version": "1.0.0",
-    "license": "UNLICENSED",
-    "private": true,
+    "license": "MIT",
+    "main": "dist/index",
     "scripts": {
         "lint": "yarn eslint . --ext .ts",
-        "format": "yarn prettier --write ./**/*.{ts,tsx,json}"
+        "format": "yarn prettier --write ./**/*.{ts,json}"
     },
-    "dependencies": {},
+    "dependencies": {
+        "@types/aws-lambda": "^8.10.89",
+        "aws-cdk-lib": "^2.7.0",
+        "aws-sdk": "^2.1056.0",
+        "constructs": "^10.0.27",
+        "yaml": "^1.10.2"
+    },
     "devDependencies": {
         "@types/node": "^17.0.0",
         "@typescript-eslint/eslint-plugin": "^5.8.0",
@@ -17,7 +23,6 @@
         "eslint-config-prettier": "^8.3.0",
         "prettier": "^2.5.1",
         "rimraf": "^3.0.2",
-        "ts-node": "^10.4.0",
         "typescript": "^4.5.2"
     }
 }
