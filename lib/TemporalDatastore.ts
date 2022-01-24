@@ -10,7 +10,7 @@ import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { RemovalPolicy } from 'aws-cdk-lib';
 
 export interface ITemporalDatastore extends IConnectable {
-    readonly type: 'mysql' | 'postgres' | 'cassandra';
+    readonly plugin: 'mysql' | 'postgres' | 'cassandra' | 'elasticsearch';
     readonly host: string;
     readonly port: number;
     readonly secret: ISecret;
@@ -39,8 +39,6 @@ export interface IAuroraServerlessTemporalDatastoreProps {
 
 export class AuroraServerlessTemporalDatastore extends Construct implements ITemporalDatastore {
     public readonly databaseCluster: ServerlessCluster;
-    // public readonly databaseClusterUsageSG?: SecurityGroup;
-    // public readonly databaseClusterSecret: ISecret;
 
     constructor(scope: Construct, id: string, props: IAuroraServerlessTemporalDatastoreProps) {
         super(scope, id);
@@ -60,17 +58,9 @@ export class AuroraServerlessTemporalDatastore extends Construct implements ITem
 
             ...props.otherServerlessClusterProps,
         });
-
-        // this.databaseClusterUsageSG = new SecurityGroup(this, 'ServerlessClusterUsageSG', {
-        //     vpc: props.vpc,
-        // });
-
-        // this.databaseCluster.connections.allowDefaultPortFrom(this.databaseClusterUsageSG);
-
-        // this.databaseClusterSecret = this.databaseCluster.secret;
     }
 
-    public readonly type = 'mysql';
+    public readonly plugin = 'mysql';
 
     public get host(): string {
         return this.databaseCluster.clusterEndpoint.hostname;

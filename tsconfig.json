@@ -11,6 +11,6 @@
         "esModuleInterop": true,
         "resolveJsonModule": true
     },
-    "include": ["./lib/**/*.ts"],
+    "include": ["./lib/**/*.ts", "./lib/**/Dockerfile"],
     "exclude": ["**/node_modules"]
 }

@@ -1,134 +1,166 @@
 import { Construct } from 'constructs';
-import { IVpc } from 'aws-cdk-lib/aws-ec2';
+import { IVpc, Port } from 'aws-cdk-lib/aws-ec2';
 import { AuroraMysqlEngineVersion, DatabaseClusterEngine } from 'aws-cdk-lib/aws-rds';
-import {
-    AwsLogDriver,
-    Cluster,
-    CpuArchitecture,
-    FargatePlatformVersion,
-    FargateService,
-    FargateTaskDefinition,
-    Protocol,
-    Secret,
-} from 'aws-cdk-lib/aws-ecs';
+import { Cluster, CpuArchitecture } from 'aws-cdk-lib/aws-ecs';
 import {
     AuroraServerlessTemporalDatastore,
     IAuroraServerlessTemporalDatastoreProps,
     ITemporalDatastore,
 } from './TemporalDatastore';
 import { TemporalVersion } from './TemporalVersion';
-import { RemovalPolicy, Token } from 'aws-cdk-lib';
-import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Lazy, Names, RemovalPolicy } from 'aws-cdk-lib';
 import { FileSystem } from 'aws-cdk-lib/aws-efs';
-import { EfsFile } from './utils/EfsFile';
+import { EfsFile } from './customResources/efsFileResource/EfsFileResource';
 import { TemporalConfiguration } from './configurations/TemporalConfiguration';
+import { DnsRecordType, INamespace } from 'aws-cdk-lib/aws-servicediscovery';
+import { FrontendService, HistoryService, MatchingService, WebService, WorkerService } from './services/ServerServices';
+import { BaseTemporalService, ITemporalServiceMachineProps } from './services/BaseService';
+import { TemporalDatabase } from './customResources/temporal/TemporalDatabaseResource';
+import { uniq } from 'lodash';
 
-const TemporalServices = ['frontend', 'history', 'matching', 'worker'] as const;
-type TemporalService = typeof TemporalServices[number];
-
-interface ITemporalClusterProps {
+export interface ITemporalClusterProps {
+    readonly clusterName?: string;
     readonly temporalVersion?: TemporalVersion;
 
     readonly vpc: IVpc;
-
-    readonly datastore?: ITemporalDatastore;
-    readonly datastoreOptions?: Omit<IAuroraServerlessTemporalDatastoreProps, 'vpc' | 'engine'>;
-
     readonly ecsCluster?: Cluster;
 
     readonly removalPolicy?: RemovalPolicy;
 
+    readonly datastore?: ITemporalDatastore;
+    readonly datastoreOptions?: Omit<IAuroraServerlessTemporalDatastoreProps, 'vpc' | 'engine'>;
+
     readonly services?: {
-        [k in TemporalService | 'defaults']?: Partial<ITemporalServiceProps>;
+        autoSetup?: Partial<ITemporalServiceProps>; // FIXME: To be removed
+        frontend?: Partial<ITemporalServiceProps>;
+        history?: Partial<ITemporalServiceProps>;
+        matching?: Partial<ITemporalServiceProps>;
+        worker?: Partial<ITemporalServiceProps>;
+        web?: Partial<ITemporalServiceProps> & { enabled?: boolean };
+        defaults?: Partial<ITemporalServiceProps>;
+    };
+
+    readonly cloudMapRegistration?: {
+        namespace: INamespace;
+        serviceName: string;
+    };
+
+    // FIXME: Implements this
+    readonly metrics?: {
+        engine?: 'disabled' | 'prometheus' | 'cloudwatch';
+        prometheusServer?: string;
     };
 }
 
 interface ITemporalServiceProps {
-    readonly cpu: number;
-    readonly memoryLimitMiB: number;
-    readonly cpuArchitecture: CpuArchitecture;
+    machine: ITemporalServiceMachineProps;
 }
 
-const defaultServiceProperties: ITemporalServiceProps = {
+const defaultMachineProperties: ITemporalServiceMachineProps = {
     cpu: 256,
     memoryLimitMiB: 512,
     cpuArchitecture: CpuArchitecture.X86_64,
 } as const;
 
 export class TemporalCluster extends Construct {
-    public readonly ecsCluster: Cluster;
-    public readonly datastore: ITemporalDatastore;
+    public readonly name: string;
+
     public readonly temporalVersion: TemporalVersion;
 
-    private readonly configEfs: FileSystem;
+    // FIXME: Reconsider if it would be possible to not expose the following three publicly
+    public readonly temporalConfig: TemporalConfiguration;
+    public readonly ecsCluster: Cluster;
+    public readonly configEfs: FileSystem;
+
+    public readonly services: {
+        // autoSetup?: AutoSetupService;
+        frontend?: FrontendService;
+        matching?: MatchingService;
+        history?: HistoryService;
+        worker?: WorkerService;
+        web?: WebService;
+    };
 
     constructor(scope: Construct, id: string, clusterProps: ITemporalClusterProps) {
         super(scope, id);
 
-        // const clusterName = Names.uniqueId(this);
+        this.name = clusterProps.clusterName ?? Names.uniqueId(this);
         this.temporalVersion = clusterProps.temporalVersion ?? TemporalVersion.LATEST;
-        const temporalConfig = new TemporalConfiguration();
+        this.temporalConfig = new TemporalConfiguration();
 
-        this.datastore = this.getOrCreateDatastore(clusterProps);
+        const servicesProps = this.resolveServiceProps(clusterProps.services);
+
+        // FIXME: Add support for mixed datastores configuration (ie. SQL+Cassandra or SQL+ES)
+        const datastore = this.getOrCreateDatastore(clusterProps);
+
+        const mainDatabase = new TemporalDatabase(this, 'MainDatabase', {
+            temporalCluster: this,
+            datastore: datastore,
+            vpc: clusterProps.vpc,
+            databaseName: 'temporal', // FIXME: Make database name configurable (related to support for mixed datastore config)
+            schemaType: 'main',
+            removalPolicy: clusterProps.removalPolicy,
+        });
+        this.temporalConfig.attachDatabase(mainDatabase);
+
+        const visibilityDatabase = new TemporalDatabase(this, 'VisibilityDatabase', {
+            temporalCluster: this,
+            datastore: datastore,
+            vpc: clusterProps.vpc,
+            databaseName: 'temporal_visibility', // FIXME: Make database name configurable (related to support for mixed datastore config)
+            schemaType: 'visibility',
+            removalPolicy: clusterProps.removalPolicy,
+        });
+        this.temporalConfig.attachDatabase(visibilityDatabase);
+
         this.ecsCluster = this.getOrCreateEcsCluster(clusterProps);
 
-        this.configEfs = this.setupConfigFileSystem(clusterProps, temporalConfig);
+        this.configEfs = this.setupConfigFileSystem(clusterProps, this.temporalConfig);
 
-        // FIXME: Replace the auto-setup image by CustomResources that only runs setup tasks
-        this.makeTemporalAutoSetupTask(clusterProps);
+        this.services = {
+            // FIXME: Replace the auto-setup image by CustomResources that only runs setup tasks
+            // autoSetup: new AutoSetupService(this, { machine: servicesProps.autoSetup.machine }),
 
-        // FIXME: Replace by TemporalServices
-        for (const service of TemporalServices) {
-            const serviceProps = {
-                ...defaultServiceProperties,
-                ...clusterProps.services?.defaults,
-                ...clusterProps.services?.[service],
-            };
+            frontend: new FrontendService(this, { machine: servicesProps.frontend.machine }),
+            matching: new MatchingService(this, { machine: servicesProps.matching.machine }),
+            history: new HistoryService(this, { machine: servicesProps.history.machine }),
+            worker: new WorkerService(this, { machine: servicesProps.worker.machine }),
 
-            const exposedPorts = [
-                temporalConfig.configuration.services[service].rpc.grpcPort,
-                temporalConfig.configuration.services[service].rpc.membershipPort,
-            ];
+            web: servicesProps.web.enabled ? new WebService(this, { machine: servicesProps.web.machine }) : undefined,
+        };
 
-            this.makeTemporalServiceTaskDefinition(service, clusterProps, serviceProps, exposedPorts);
+        if (clusterProps.cloudMapRegistration) {
+            this.services.frontend.fargateService.enableCloudMap({
+                name: clusterProps.cloudMapRegistration?.serviceName,
+                cloudMapNamespace: clusterProps.cloudMapRegistration?.namespace,
+                dnsRecordType: DnsRecordType.A,
+            });
         }
+
+        this.wireUpNetworkAuthorizations([mainDatabase, visibilityDatabase]);
     }
 
-    private setupConfigFileSystem(props: ITemporalClusterProps, temporalConfig: TemporalConfiguration) {
-        const configEfs = new FileSystem(this, 'ConfigFS', {
-            vpc: props.vpc,
-            removalPolicy: props.removalPolicy,
-        });
+    // FIXME: Refactor this
+    private resolveServiceProps(
+        services: ITemporalClusterProps['services'],
+    ): Required<Omit<ITemporalClusterProps['services'], 'default'>> {
+        const out: ITemporalClusterProps['services'] = {};
 
-        // Temporal server image builds the main configuration file, from a template file
-        // Ideally, we would replace that template file with something that already contains
-        // most of our configuration items. However, we faced issues implementing that:
-        // posix permissions when the script tries to write new dockerized config file; ECS doesn't
-        // allow to map a single file from an EFS volume (only a directory)...
-        // At present, we rely on the default template file, and pass all config items through env variables.
-        // A possible alternative: https://kichik.com/2020/09/10/mounting-configuration-files-in-fargate/
-        // new EfsFile(this, 'TemporalConfig', {
-        //     fileSystem: configEfs,
-        //     path: `/temporal/config/config_template.yaml`,
-        //     vpc: props.vpc,
-        //     contents: temporalConfig.stringifyConfiguration(),
-        // });
+        for (const service of ['frontend', 'history', 'matching', 'worker', 'autoSetup', 'web'] as const) {
+            out[service] = {
+                ...services?.defaults,
+                ...services?.[service],
+                machine: {
+                    ...defaultMachineProperties,
+                    ...services?.defaults?.machine,
+                    ...services?.[service]?.machine,
+                },
+            };
+        }
 
-        new EfsFile(this, 'TemporalDynamicConfig', {
-            fileSystem: configEfs,
-            path: `/temporal/dynamic_config/dynamic_config.yaml`,
-            vpc: props.vpc,
-            contents: temporalConfig.stringifyDynamic(),
-        });
+        out.web.enabled ??= true;
 
-        new EfsFile(this, 'TemporalWebConfig', {
-            fileSystem: configEfs,
-            path: `/temporal/web-config/web-config.yaml`,
-            vpc: props.vpc,
-            contents: temporalConfig.stringifyWeb(),
-        });
-
-        return configEfs;
+        return out as Required<Omit<ITemporalClusterProps['services'], 'default'>>;
     }
 
     private getOrCreateDatastore(props: ITemporalClusterProps) {
@@ -156,202 +188,91 @@ export class TemporalCluster extends Construct {
             return new Cluster(this, 'EcsCluster', {
                 vpc: props.vpc,
                 enableFargateCapacityProviders: true,
+                containerInsights: true,
             });
         }
     }
 
-    // FIXME: Replace this by a CustomResource that runs required initialization code from a lambda
-    // This is definitely not what I have in mind, but it should works enough for a proof-of-concept
-    makeTemporalAutoSetupTask(clusterProps: ITemporalClusterProps) {
-        const logGroup = new LogGroup(this, `AutoSetupLogGroup`, {
-            removalPolicy: clusterProps.removalPolicy,
-            retention: RetentionDays.ONE_MONTH,
+    private setupConfigFileSystem(props: ITemporalClusterProps, temporalConfig: TemporalConfiguration) {
+        const configEfs = new FileSystem(this, 'ConfigFS', {
+            vpc: props.vpc,
+            removalPolicy: props.removalPolicy,
         });
 
-        const taskDefinition = new FargateTaskDefinition(this, `AutoSetupTaskDef`, {
-            cpu: defaultServiceProperties.cpu,
-            memoryLimitMiB: defaultServiceProperties.memoryLimitMiB,
-            runtimePlatform: { cpuArchitecture: defaultServiceProperties.cpuArchitecture },
+        // Temporal server image builds the main configuration file, from a template file
+        // Ideally, we would replace that template file with something that already contains
+        // most of our configuration items. However, we faced issues implementing that:
+        // posix permissions when the script tries to write new dockerized config file; ECS doesn't
+        // allow to map a single file from an EFS volume (only a directory)...
+        // At present, we rely on the default template file, and pass all config items through env variables.
+        // A possible alternative: https://kichik.com/2020/09/10/mounting-configuration-files-in-fargate/
+        // new EfsFile(this, 'TemporalConfig', {
+        //     fileSystem: configEfs,
+        //     path: `/temporal/config/config_template.yaml`,
+        //     vpc: props.vpc,
+        //     contents: Lazy.string({ produce: () => temporalConfig.stringifyConfiguration() }),
+        // });
 
-            volumes: [
-                {
-                    name: 'dynamic_config',
-                    efsVolumeConfiguration: {
-                        fileSystemId: this.configEfs.fileSystemId,
-                        rootDirectory: '/temporal/dynamic_config',
-                        // FIXME: Add authorization and in transit encryption
-                    },
-                },
-            ],
+        new EfsFile(this, 'TemporalDynamicConfig', {
+            fileSystem: configEfs,
+            path: `/temporal/dynamic_config/dynamic_config.yaml`,
+            vpc: props.vpc,
+            contents: Lazy.string({ produce: () => temporalConfig.stringifyDynamic() }),
         });
 
-        const container = taskDefinition.addContainer(`AutoSetupTaskDefServiceContainer`, {
-            containerName: 'AutoSetup',
-            image: this.temporalVersion.containerImages.temporalAutoSetup,
-
-            environment: {
-                SERVICES: 'frontend:history:matching:worker',
-
-                //
-                // See https://github.com/temporalio/temporal/blob/master/docker/config_template.yaml for reference.
-                LOG_LEVEL: 'debug,info',
-                NUM_HISTORY_SHARDS: '512',
-
-                DB: this.datastore.type,
-                MYSQL_SEEDS: this.datastore.host,
-                DB_PORT: Token.asString(this.datastore.port),
-                DBNAME: 'temporal',
-                DBNAME_VISIBILITY: 'temporal_visibility',
-
-                // Required for Aurora MySQL 5.7
-                // https://github.com/temporalio/temporal/issues/1251
-                // https://github.com/temporalio/temporal/blob/71093d7c5baed10546d1e91608ab814f73c6fdba/docker/auto-setup.sh#L157
-                MYSQL_TX_ISOLATION_COMPAT: 'true',
-
-                DYNAMIC_CONFIG_FILE_PATH: '/etc/temporal/dynamic_config/dynamic_config.yaml',
-            },
-
-            secrets: {
-                MYSQL_USER: Secret.fromSecretsManager(this.datastore.secret, 'username'),
-                MYSQL_PWD: Secret.fromSecretsManager(this.datastore.secret, 'password'),
-            },
-
-            logging: new AwsLogDriver({
-                streamPrefix: `${this.node.id}-AutoSetup`,
-                logGroup,
-            }),
-
-            portMappings: [7233, 7234, 7235, 7239, 6933, 6934, 6935, 6939].map((port: number) => ({
-                containerPort: port,
-                hostPort: port,
-                protocol: Protocol.TCP,
-            })),
+        new EfsFile(this, 'TemporalWebConfig', {
+            fileSystem: configEfs,
+            path: `/temporal/web_config/web_config.yaml`,
+            vpc: props.vpc,
+            contents: Lazy.string({ produce: () => temporalConfig.stringifyWeb() }),
         });
 
-        container.addMountPoints(
-            // {
-            //     containerPath: `/etc/temporal/config`,
-            //     readOnly: false, // FIXME: entrypoint will generate config/docker.yaml from config/config_template.yaml
-            //     sourceVolume: 'config',
-            // },
-            {
-                containerPath: `/etc/temporal/dynamic_config`,
-                readOnly: true,
-                sourceVolume: 'dynamic_config',
-            },
-        );
-
-        const fargateService = new FargateService(this, `AutoSetupFargateService`, {
-            cluster: this.ecsCluster,
-            assignPublicIp: false,
-            taskDefinition,
-            platformVersion: FargatePlatformVersion.VERSION1_4,
-        });
-
-        this.configEfs.connections.allowDefaultPortFrom(fargateService);
-        this.datastore.connections.allowDefaultPortFrom(fargateService);
-
-        return taskDefinition;
+        return configEfs;
     }
 
-    private makeTemporalServiceTaskDefinition(
-        service: string,
-        clusterProps: ITemporalClusterProps,
-        serviceProps: ITemporalServiceProps,
-        exposedPorts: number[],
-    ) {
-        const logGroup = new LogGroup(this, `${capitalize(service)}LogGroup`, {
-            removalPolicy: clusterProps.removalPolicy,
-            retention: RetentionDays.ONE_MONTH,
-        });
+    private wireUpNetworkAuthorizations(databases: TemporalDatabase[]) {
+        // Wire up network authorizations
+        // FIXME: Refactor all of this
+        // FIXME: At this time, the autoSetup plays all roles; it makes wiring up significantly more complicated...
+        function allow(sources: BaseTemporalService[], port: number, targets: BaseTemporalService[]) {
+            for (const target of targets)
+                for (const source of sources) {
+                    target.fargateService.connections.allowFrom(source.fargateService, Port.tcp(port));
+                }
+        }
 
-        const taskDefinition = new FargateTaskDefinition(this, `${capitalize(service)}TaskDef`, {
-            cpu: serviceProps.cpu,
-            memoryLimitMiB: serviceProps.memoryLimitMiB,
-            runtimePlatform: { cpuArchitecture: serviceProps.cpuArchitecture },
+        // FIXME: Not everyone might want this...
+        this.services.frontend.fargateService.connections.allowFromAnyIpv4(Port.tcp(7233));
+        // this.services.autoSetup.fargateService.connections.allowFromAnyIpv4(Port.tcp(7233)); // FIXME: Remove
 
-            volumes: [
-                {
-                    name: 'dynamic_config',
-                    efsVolumeConfiguration: {
-                        fileSystemId: this.configEfs.fileSystemId,
-                        rootDirectory: '/temporal/dynamic_config',
-                        // FIXME: Add authorization and in transit encryption
-                    },
-                },
-            ],
-        });
+        const frontendNodes = [this.services.frontend /*, this.services.autoSetup*/];
+        const historyNodes = [this.services.history /*, this.services.autoSetup*/];
+        const matchingNodes = [this.services.matching /*, this.services.autoSetup*/];
+        const workerNodes = [this.services.worker /*, this.services.autoSetup*/];
 
-        const container = taskDefinition.addContainer(`${capitalize(service)}TaskDefServiceContainer`, {
-            containerName: service,
-            image: this.temporalVersion.containerImages.temporalServer,
+        allow(frontendNodes, 7234, historyNodes);
+        allow(frontendNodes, 7235, matchingNodes);
+        allow(frontendNodes, 7239, workerNodes);
 
-            environment: {
-                SERVICES: service,
+        allow(historyNodes, 7235, matchingNodes);
 
-                //
-                // See https://github.com/temporalio/temporal/blob/master/docker/config_template.yaml for reference.
-                LOG_LEVEL: 'debug,info',
-                NUM_HISTORY_SHARDS: '512',
+        allow(matchingNodes, 7233, frontendNodes);
+        allow(matchingNodes, 7234, historyNodes);
 
-                DB: this.datastore.type,
-                MYSQL_SEEDS: this.datastore.host,
-                DB_PORT: Token.asString(this.datastore.port),
-                DBNAME: 'temporal',
-                DBNAME_VISIBILITY: 'temporal_visibility',
+        allow(workerNodes, 7233, frontendNodes);
 
-                // Required for Aurora MySQL 5.7
-                // https://github.com/temporalio/temporal/issues/1251
-                // https://github.com/temporalio/temporal/blob/71093d7c5baed10546d1e91608ab814f73c6fdba/docker/auto-setup.sh#L157
-                MYSQL_TX_ISOLATION_COMPAT: 'true',
+        allow(frontendNodes, 6933, frontendNodes);
+        allow(historyNodes, 6934, historyNodes);
+        allow(matchingNodes, 6935, matchingNodes);
+        allow(workerNodes, 6939, workerNodes);
 
-                DYNAMIC_CONFIG_FILE_PATH: '/etc/temporal/dynamic_config/dynamic_config.yaml',
-            },
-
-            secrets: {
-                MYSQL_USER: Secret.fromSecretsManager(this.datastore.secret, 'username'),
-                MYSQL_PWD: Secret.fromSecretsManager(this.datastore.secret, 'password'),
-            },
-
-            logging: new AwsLogDriver({
-                streamPrefix: `${this.node.id}-${capitalize(service)}`,
-                logGroup,
-            }),
-
-            portMappings: exposedPorts.map((port: number) => ({
-                containerPort: port,
-                hostPort: port,
-                protocol: Protocol.TCP,
-            })),
-        });
-
-        container.addMountPoints(
-            // {
-            //     containerPath: `/etc/temporal/config`,
-            //     readOnly: false, // FIXME: entrypoint will generate config/docker.yaml from config/config_template.yaml
-            //     sourceVolume: 'config',
-            // },
-            {
-                containerPath: `/etc/temporal/dynamic_config`,
-                readOnly: true,
-                sourceVolume: 'dynamic_config',
-            },
-        );
-
-        const fargateService = new FargateService(this, `${capitalize(service)}FargateService`, {
-            cluster: this.ecsCluster,
-            assignPublicIp: false,
-            taskDefinition,
-            platformVersion: FargatePlatformVersion.VERSION1_4,
-        });
-
-        this.configEfs.connections.allowDefaultPortFrom(fargateService);
-        this.datastore.connections.allowDefaultPortFrom(fargateService);
-
-        return taskDefinition;
+        const datastores = uniq(databases.map((db) => db.datastore));
+        for (const datastore of datastores) {
+            // Grant network access from the fargate service to the RDS datastore
+            datastore.connections.allowDefaultPortFrom(this.services.frontend.fargateService);
+            datastore.connections.allowDefaultPortFrom(this.services.history.fargateService);
+            datastore.connections.allowDefaultPortFrom(this.services.matching.fargateService);
+            // datastore.connections.allowDefaultPortFrom(this.services.autoSetup.fargateService);
+        }
     }
-}
-
-function capitalize(s: string) {
-    return s.charAt(0).toUpperCase() + s.slice(1);
 }
