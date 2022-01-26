@@ -1,10 +1,12 @@
-CDK constructs to setup a Temporal cluster on ECS Fargate.
+# CDK Constructs for Temporal cluster on AWS
 
-Note: this is currently a work in progress. At this point, I consider it as a proof-of-concept. However, I believe that, once completed, these constructs will provide a reasonable method for Temporal cluster setup in AWS/CDK environements and applications.
+CDK constructs to setup a [Temporal](https://temporal.io/) cluster on ECS Fargate.
 
-# Features
+**Note: this is currently a work in progress. At this point, I consider it as a proof-of-concept. However, I believe that, once completed, these constructs will provide a reasonable method for setup of production-grade application-scoped Temporal cluster in AWS/CDK environements.**
 
-## Current features
+## Features
+
+### Current features
 
 -   Setup a Temporal cluster on ECS Fargate
 -   Use distinct containers for each Temporal server roles (frontend, history, matching, worker)
@@ -16,9 +18,9 @@ Note: this is currently a work in progress. At this point, I consider it as a pr
 -   Automatically creates and upgrade the 'temporal' and 'visibility' schemas at launch time, if appropriate, without using the auto_setup container
 -   Optionnaly launch the Temporal web UI
 
-## Missing features
+### Missing features
 
--   Automatically creates the default Temporal namespace at launch
+-   Automatically create the default Temporal namespace at launch
 -   Allow configuring distinct datastores for 'temporal' and 'visibility' schemas (notably, using ElasticSearch for 'visiblity')
 -   Make it possible to easily configure the cluster as a single node cluster (that is, one container executing all roles). That would be useful for development in situations where the Temporal cluster is part of the application deployment
 -   Configuration of auto-scalling
@@ -26,15 +28,15 @@ Note: this is currently a work in progress. At this point, I consider it as a pr
 -   Register the Temporal web UI nodes to CloudMap
 -   ...
 
-# Example usage
+## Example usage
 
 Note that default machine specs are intentionnaly small; also, in the following examples, removal policy is intentionnaly set to DESTROY. This is appropriate for tests and development purpose. In production, you should size up your containers appropriately and would most likely want to set removal policy to RETAIN (well, at least on your datastore).
 
-## Simple example
+### Simple example
 
 ```
 import { App, RemovalPolicy, Stack } from 'aws-cdk-lib';
-import { TemporalCluster } from '@progymedia/temporal-cluster-cdk';
+import { TemporalCluster } from 'temporalio-cluster-cdk';
 import { Vpc } from 'aws-cdk-lib/aws-ec2';
 import { PrivateDnsNamespace } from 'aws-cdk-lib/aws-servicediscovery';
 
@@ -121,7 +123,7 @@ new TemporalCluster(stack, 'TemporalCluster', {
 }
 ```
 
-# License
+## License
 
 The MIT License
 
