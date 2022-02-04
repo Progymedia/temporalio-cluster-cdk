@@ -25,7 +25,6 @@ export class TemporalVersion {
         // FIXME: Rethink how we handle versionning in this class. Not all components have the same version
         return {
             temporalServer: DockerImage.fromRegistry(`${prefix}temporalio/server:${this.version}`),
-            temporalAutoSetup: DockerImage.fromRegistry(`${prefix}temporalio/auto-setup:${this.version}`),
             temporalAdminTools: DockerImage.fromRegistry(`${prefix}temporalio/admin-tools:${this.version}`),
             temporalWeb: DockerImage.fromRegistry(`${prefix}temporalio/web:1.13.0`),
         };

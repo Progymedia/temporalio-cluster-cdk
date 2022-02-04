@@ -1,14 +1,12 @@
 import { TemporalCluster } from '..';
 import { BaseTemporalService, IBaseTemporalServiceProps } from './BaseService';
 
-// FIXME: Replace AutoSetupService by a CustomResource that runs required initialization code from a lambda
-// This is definitely not what I have in mind, but it should works enough for a proof-of-concept
-export class AutoSetupService extends BaseTemporalService {
+export class SingleService extends BaseTemporalService {
     constructor(cluster: TemporalCluster, props: Pick<IBaseTemporalServiceProps, 'machine'>) {
         // const clusterProps: ITemporalClusterProps;
 
-        super(cluster, 'AutoSetup', {
-            image: cluster.temporalVersion.containerImages.temporalAutoSetup,
+        super(cluster, 'Single', {
+            image: cluster.temporalVersion.containerImages.temporalServer,
             machine: props.machine,
             environement: {
                 SERVICES: 'frontend:history:matching:worker',

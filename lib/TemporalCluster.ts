@@ -14,7 +14,7 @@ import { EfsFile } from './customResources/efsFileResource/EfsFileResource';
 import { TemporalConfiguration } from './configurations/TemporalConfiguration';
 import { DnsRecordType, INamespace } from 'aws-cdk-lib/aws-servicediscovery';
 import {
-    AutoSetupService,
+    SingleService,
     FrontendService,
     HistoryService,
     MatchingService,
@@ -37,7 +37,7 @@ export interface ITemporalClusterProps {
     readonly datastoreOptions?: Omit<IAuroraServerlessTemporalDatastoreProps, 'vpc' | 'engine'>;
 
     readonly services?: {
-        autoSetup?: Partial<ITemporalServiceProps>;
+        single?: Partial<ITemporalServiceProps>;
 
         frontend?: Partial<ITemporalServiceProps>;
         history?: Partial<ITemporalServiceProps>;
@@ -71,7 +71,7 @@ const defaultMachineProperties: ITemporalServiceMachineProps = {
     cpuArchitecture: CpuArchitecture.X86_64,
 } as const;
 
-type TemporalNodeType = 'autoSetup' | 'frontend' | 'matching' | 'history' | 'worker' | 'web';
+type TemporalNodeType = 'single' | 'frontend' | 'matching' | 'history' | 'worker' | 'web';
 
 export class TemporalCluster extends Construct implements IConnectable {
     public readonly name: string;
@@ -84,7 +84,7 @@ export class TemporalCluster extends Construct implements IConnectable {
     public readonly configEfs: FileSystem;
 
     public readonly services: {
-        autoSetup?: AutoSetupService;
+        single?: SingleService;
         frontend?: FrontendService;
         matching?: MatchingService;
         history?: HistoryService;
@@ -134,7 +134,7 @@ export class TemporalCluster extends Construct implements IConnectable {
 
         this.services = {
             // FIXME: Replace the auto-setup image by CustomResources that only runs setup tasks
-            // autoSetup: null, // new AutoSetupService(this, { machine: servicesProps.autoSetup.machine }),
+            // single: null, // new SingleService(this, { machine: servicesProps.single.machine }),
 
             frontend: new FrontendService(this, { machine: servicesProps.frontend.machine }),
             matching: new MatchingService(this, { machine: servicesProps.matching.machine }),
@@ -161,7 +161,7 @@ export class TemporalCluster extends Construct implements IConnectable {
     ): Required<Omit<ITemporalClusterProps['services'], 'default'>> {
         const out: ITemporalClusterProps['services'] = {};
 
-        for (const service of ['frontend', 'history', 'matching', 'worker', 'autoSetup', 'web'] as const) {
+        for (const service of ['frontend', 'history', 'matching', 'worker', 'single', 'web'] as const) {
             out[service] = {
                 ...services?.defaults,
                 ...services?.[service],
@@ -257,11 +257,11 @@ export class TemporalCluster extends Construct implements IConnectable {
 
         const portsConfig = this.temporalConfig.configuration.services;
 
-        // Note that the autoSetup machine, if activated, plays all server roles
-        const frontendConnections = asConnections(portsConfig.frontend.rpc.grpcPort, ['frontend', 'autoSetup']);
-        const historyConnections = asConnections(portsConfig.history.rpc.grpcPort, ['history', 'autoSetup']);
-        const matchingConnections = asConnections(portsConfig.matching.rpc.grpcPort, ['matching', 'autoSetup']);
-        const workerConnections = asConnections(portsConfig.worker.rpc.grpcPort, ['worker', 'autoSetup']);
+        // Note that the single machine, if activated, plays all server roles
+        const frontendConnections = asConnections(portsConfig.frontend.rpc.grpcPort, ['frontend', 'single']);
+        const historyConnections = asConnections(portsConfig.history.rpc.grpcPort, ['history', 'single']);
+        const matchingConnections = asConnections(portsConfig.matching.rpc.grpcPort, ['matching', 'single']);
+        const workerConnections = asConnections(portsConfig.worker.rpc.grpcPort, ['worker', 'single']);
         const webConnections = asConnections(8080 /* FIXME */, ['web']);
 
         frontendConnections.allowToDefaultPort(historyConnections);
@@ -282,13 +282,7 @@ export class TemporalCluster extends Construct implements IConnectable {
         webConnections.allowToDefaultPort(frontendConnections);
 
         // Allow Ringpop/membership communications between all server nodes, on every membership ports
-        const allServerConnections = asConnections(undefined, [
-            'frontend',
-            'history',
-            'matching',
-            'worker',
-            'autoSetup',
-        ]);
+        const allServerConnections = asConnections(undefined, ['frontend', 'history', 'matching', 'worker', 'single']);
         allServerConnections.allowInternally(Port.tcp(portsConfig.frontend.rpc.membershipPort));
         allServerConnections.allowInternally(Port.tcp(portsConfig.matching.rpc.membershipPort));
         allServerConnections.allowInternally(Port.tcp(portsConfig.history.rpc.membershipPort));
