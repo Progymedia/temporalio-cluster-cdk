@@ -3,7 +3,7 @@ import { CustomResource } from 'aws-cdk-lib';
 import { FileSystem } from 'aws-cdk-lib/aws-efs';
 import { IEfsFileResourceProperties } from './EfsFileHandler';
 import { IVpc, SubnetSelection } from 'aws-cdk-lib/aws-ec2';
-import { normalize } from 'path/posix';
+import { posix as PosixPath } from 'path';
 import { EfsFileProvider } from './EfsFileProvider';
 
 interface IEfsFileProps {
@@ -39,7 +39,7 @@ export class EfsFile extends Construct {
     constructor(scope: Construct, id: string, props: IEfsFileProps) {
         super(scope, id);
 
-        const normalizedPath = normalize(props.path);
+        const normalizedPath = PosixPath.normalize(props.path);
         const [, rootDir] = normalizedPath.match(/^([/][^/]+)[/].*[^/]$/);
         if (!rootDir)
             throw new Error(
