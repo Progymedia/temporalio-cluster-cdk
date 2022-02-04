@@ -1,15 +1,11 @@
 import { CustomResource, RemovalPolicy, Token } from 'aws-cdk-lib';
-import { IVpc, SubnetSelection } from 'aws-cdk-lib/aws-ec2';
 import { Construct } from 'constructs';
 import { ITemporalDatastore, TemporalCluster } from '../..';
 import { ITemporalDatabaseResourceProperties } from './TemporalDatabaseHandler';
 import { TemporalDatabaseProvider } from './TemporalDatabaseProvider';
 
 export interface ITemporalDatabaseProps {
-    readonly temporalCluster: TemporalCluster;
     readonly datastore: ITemporalDatastore;
-    readonly vpc: IVpc;
-    readonly vpcSubnets?: SubnetSelection;
     readonly databaseName: string;
     readonly schemaType: 'main' | 'visibility';
     readonly removalPolicy?: RemovalPolicy;
@@ -21,18 +17,10 @@ export class TemporalDatabase extends Construct {
     public readonly databaseName: string;
     public readonly schemaType: 'main' | 'visibility';
 
-    constructor(scope: Construct, id: string, props: ITemporalDatabaseProps) {
-        super(scope, id);
+    constructor(cluster: TemporalCluster, id: string, props: ITemporalDatabaseProps) {
+        super(cluster, id);
 
-        const provider = TemporalDatabaseProvider.getOrCreate(
-            scope,
-            {
-                temporalVersion: props.temporalCluster.temporalVersion,
-                vpc: props.vpc,
-                vpcSubnets: props.vpcSubnets,
-            },
-            props,
-        );
+        const provider = TemporalDatabaseProvider.getOrCreate(cluster, props.datastore);
 
         new CustomResource(this, 'Resource', {
             serviceToken: provider,
@@ -44,7 +32,7 @@ export class TemporalDatabase extends Construct {
                 DatastoreSecretId: props.datastore.secret.secretName,
                 SchemaType: props.schemaType,
                 DatabaseName: props.databaseName,
-                TemporalVersion: props.temporalCluster.temporalVersion.version,
+                TemporalVersion: cluster.temporalVersion.version,
             },
             removalPolicy: props.removalPolicy ?? RemovalPolicy.RETAIN,
         });

@@ -15,7 +15,7 @@ import { Construct } from 'constructs';
 import { TemporalCluster } from '..';
 import { uniq, map } from 'lodash';
 import { DockerImage, RemovalPolicy } from 'aws-cdk-lib';
-import { IConnectable, SubnetType } from 'aws-cdk-lib/aws-ec2';
+import { Connections, IConnectable, SubnetType } from 'aws-cdk-lib/aws-ec2';
 
 export interface ITemporalServiceMachineProps {
     readonly cpu: number;
@@ -40,7 +40,7 @@ export interface IBaseTemporalServiceProps {
     readonly exposedPorts: number[];
 }
 
-export abstract class BaseTemporalService extends Construct {
+export abstract class BaseTemporalService extends Construct implements IConnectable {
     public readonly fargateService: FargateService;
 
     constructor(private cluster: TemporalCluster, id: string, props: IBaseTemporalServiceProps) {
@@ -109,7 +109,9 @@ export abstract class BaseTemporalService extends Construct {
         for (const fs of uniq(map(props.volumes, 'fileSystem'))) {
             fs.connections.allowDefaultPortFrom(this.fargateService);
         }
+    }
 
-        this.fargateService.connections.defaultPort;
+    public get connections(): Connections {
+        return this.fargateService.connections;
     }
 }

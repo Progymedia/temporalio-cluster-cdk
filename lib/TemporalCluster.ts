@@ -1,5 +1,5 @@
 import { Construct } from 'constructs';
-import { IVpc, Port } from 'aws-cdk-lib/aws-ec2';
+import { Connections, IConnectable, IVpc, Port } from 'aws-cdk-lib/aws-ec2';
 import { AuroraMysqlEngineVersion, DatabaseClusterEngine } from 'aws-cdk-lib/aws-rds';
 import { Cluster, CpuArchitecture } from 'aws-cdk-lib/aws-ecs';
 import {
@@ -13,10 +13,16 @@ import { FileSystem } from 'aws-cdk-lib/aws-efs';
 import { EfsFile } from './customResources/efsFileResource/EfsFileResource';
 import { TemporalConfiguration } from './configurations/TemporalConfiguration';
 import { DnsRecordType, INamespace } from 'aws-cdk-lib/aws-servicediscovery';
-import { FrontendService, HistoryService, MatchingService, WebService, WorkerService } from './services/ServerServices';
-import { BaseTemporalService, ITemporalServiceMachineProps } from './services/BaseService';
+import {
+    AutoSetupService,
+    FrontendService,
+    HistoryService,
+    MatchingService,
+    WebService,
+    WorkerService,
+} from './services/ServerServices';
+import { ITemporalServiceMachineProps } from './services/BaseService';
 import { TemporalDatabase } from './customResources/temporal/TemporalDatabaseResource';
-import { uniq } from 'lodash';
 
 export interface ITemporalClusterProps {
     readonly clusterName?: string;
@@ -31,12 +37,15 @@ export interface ITemporalClusterProps {
     readonly datastoreOptions?: Omit<IAuroraServerlessTemporalDatastoreProps, 'vpc' | 'engine'>;
 
     readonly services?: {
-        autoSetup?: Partial<ITemporalServiceProps>; // FIXME: To be removed
+        autoSetup?: Partial<ITemporalServiceProps>;
+
         frontend?: Partial<ITemporalServiceProps>;
         history?: Partial<ITemporalServiceProps>;
         matching?: Partial<ITemporalServiceProps>;
         worker?: Partial<ITemporalServiceProps>;
+
         web?: Partial<ITemporalServiceProps> & { enabled?: boolean };
+
         defaults?: Partial<ITemporalServiceProps>;
     };
 
@@ -62,7 +71,9 @@ const defaultMachineProperties: ITemporalServiceMachineProps = {
     cpuArchitecture: CpuArchitecture.X86_64,
 } as const;
 
-export class TemporalCluster extends Construct {
+type TemporalNodeType = 'autoSetup' | 'frontend' | 'matching' | 'history' | 'worker' | 'web';
+
+export class TemporalCluster extends Construct implements IConnectable {
     public readonly name: string;
 
     public readonly temporalVersion: TemporalVersion;
@@ -73,12 +84,20 @@ export class TemporalCluster extends Construct {
     public readonly configEfs: FileSystem;
 
     public readonly services: {
-        // autoSetup?: AutoSetupService;
+        autoSetup?: AutoSetupService;
         frontend?: FrontendService;
         matching?: MatchingService;
         history?: HistoryService;
         worker?: WorkerService;
         web?: WebService;
+    };
+
+    public rolesConnections: {
+        frontend: Connections;
+        matching: Connections;
+        history: Connections;
+        worker: Connections;
+        web: Connections;
     };
 
     constructor(scope: Construct, id: string, clusterProps: ITemporalClusterProps) {
@@ -94,9 +113,7 @@ export class TemporalCluster extends Construct {
         const datastore = this.getOrCreateDatastore(clusterProps);
 
         const mainDatabase = new TemporalDatabase(this, 'MainDatabase', {
-            temporalCluster: this,
             datastore: datastore,
-            vpc: clusterProps.vpc,
             databaseName: 'temporal', // FIXME: Make database name configurable (related to support for mixed datastore config)
             schemaType: 'main',
             removalPolicy: clusterProps.removalPolicy,
@@ -104,9 +121,7 @@ export class TemporalCluster extends Construct {
         this.temporalConfig.attachDatabase(mainDatabase);
 
         const visibilityDatabase = new TemporalDatabase(this, 'VisibilityDatabase', {
-            temporalCluster: this,
             datastore: datastore,
-            vpc: clusterProps.vpc,
             databaseName: 'temporal_visibility', // FIXME: Make database name configurable (related to support for mixed datastore config)
             schemaType: 'visibility',
             removalPolicy: clusterProps.removalPolicy,
@@ -119,7 +134,7 @@ export class TemporalCluster extends Construct {
 
         this.services = {
             // FIXME: Replace the auto-setup image by CustomResources that only runs setup tasks
-            // autoSetup: new AutoSetupService(this, { machine: servicesProps.autoSetup.machine }),
+            // autoSetup: null, // new AutoSetupService(this, { machine: servicesProps.autoSetup.machine }),
 
             frontend: new FrontendService(this, { machine: servicesProps.frontend.machine }),
             matching: new MatchingService(this, { machine: servicesProps.matching.machine }),
@@ -130,14 +145,14 @@ export class TemporalCluster extends Construct {
         };
 
         if (clusterProps.cloudMapRegistration) {
-            this.services.frontend.fargateService.enableCloudMap({
+            const cloudMapService = this.services.frontend.fargateService.enableCloudMap({
                 name: clusterProps.cloudMapRegistration?.serviceName,
                 cloudMapNamespace: clusterProps.cloudMapRegistration?.namespace,
                 dnsRecordType: DnsRecordType.A,
             });
         }
 
-        this.wireUpNetworkAuthorizations([mainDatabase, visibilityDatabase]);
+        this.wireUpNetworkAuthorizations({ main: mainDatabase, visibility: visibilityDatabase });
     }
 
     // FIXME: Refactor this
@@ -230,49 +245,65 @@ export class TemporalCluster extends Construct {
         return configEfs;
     }
 
-    private wireUpNetworkAuthorizations(databases: TemporalDatabase[]) {
-        // Wire up network authorizations
-        // FIXME: Refactor all of this
-        // FIXME: At this time, the autoSetup plays all roles; it makes wiring up significantly more complicated...
-        function allow(sources: BaseTemporalService[], port: number, targets: BaseTemporalService[]) {
-            for (const target of targets)
-                for (const source of sources) {
-                    target.fargateService.connections.allowFrom(source.fargateService, Port.tcp(port));
-                }
-        }
+    private wireUpNetworkAuthorizations(databases: { main: TemporalDatabase; visibility: TemporalDatabase }) {
+        const asConnections = (defaultPort: number | undefined, nodeTypes: TemporalNodeType[]) => {
+            return new Connections({
+                securityGroups: nodeTypes.flatMap(
+                    (nodeType) => this.services[nodeType]?.connections?.securityGroups || [],
+                ),
+                defaultPort: defaultPort ? Port.tcp(defaultPort) : undefined,
+            });
+        };
 
-        // FIXME: Not everyone might want this...
-        this.services.frontend.fargateService.connections.allowFromAnyIpv4(Port.tcp(7233));
-        // this.services.autoSetup.fargateService.connections.allowFromAnyIpv4(Port.tcp(7233)); // FIXME: Remove
+        const portsConfig = this.temporalConfig.configuration.services;
 
-        const frontendNodes = [this.services.frontend /*, this.services.autoSetup*/];
-        const historyNodes = [this.services.history /*, this.services.autoSetup*/];
-        const matchingNodes = [this.services.matching /*, this.services.autoSetup*/];
-        const workerNodes = [this.services.worker /*, this.services.autoSetup*/];
+        // Note that the autoSetup machine, if activated, plays all server roles
+        const frontendConnections = asConnections(portsConfig.frontend.rpc.grpcPort, ['frontend', 'autoSetup']);
+        const historyConnections = asConnections(portsConfig.history.rpc.grpcPort, ['history', 'autoSetup']);
+        const matchingConnections = asConnections(portsConfig.matching.rpc.grpcPort, ['matching', 'autoSetup']);
+        const workerConnections = asConnections(portsConfig.worker.rpc.grpcPort, ['worker', 'autoSetup']);
+        const webConnections = asConnections(8080 /* FIXME */, ['web']);
 
-        allow(frontendNodes, 7234, historyNodes);
-        allow(frontendNodes, 7235, matchingNodes);
-        allow(frontendNodes, 7239, workerNodes);
+        frontendConnections.allowToDefaultPort(historyConnections);
+        frontendConnections.allowToDefaultPort(matchingConnections);
+        frontendConnections.allowToDefaultPort(workerConnections);
+        frontendConnections.allowToDefaultPort(databases.main.datastore);
+        frontendConnections.allowToDefaultPort(databases.visibility.datastore);
 
-        allow(historyNodes, 7235, matchingNodes);
+        matchingConnections.allowToDefaultPort(frontendConnections);
+        matchingConnections.allowToDefaultPort(historyConnections);
+        matchingConnections.allowToDefaultPort(databases.main.datastore);
 
-        allow(matchingNodes, 7233, frontendNodes);
-        allow(matchingNodes, 7234, historyNodes);
+        historyConnections.allowToDefaultPort(matchingConnections);
+        historyConnections.allowToDefaultPort(databases.main.datastore);
 
-        allow(workerNodes, 7233, frontendNodes);
+        workerConnections.allowToDefaultPort(frontendConnections);
 
-        allow(frontendNodes, 6933, frontendNodes);
-        allow(historyNodes, 6934, historyNodes);
-        allow(matchingNodes, 6935, matchingNodes);
-        allow(workerNodes, 6939, workerNodes);
+        webConnections.allowToDefaultPort(frontendConnections);
 
-        const datastores = uniq(databases.map((db) => db.datastore));
-        for (const datastore of datastores) {
-            // Grant network access from the fargate service to the RDS datastore
-            datastore.connections.allowDefaultPortFrom(this.services.frontend.fargateService);
-            datastore.connections.allowDefaultPortFrom(this.services.history.fargateService);
-            datastore.connections.allowDefaultPortFrom(this.services.matching.fargateService);
-            // datastore.connections.allowDefaultPortFrom(this.services.autoSetup.fargateService);
-        }
+        // Allow Ringpop/membership communications between all server nodes, on every membership ports
+        const allServerConnections = asConnections(undefined, [
+            'frontend',
+            'history',
+            'matching',
+            'worker',
+            'autoSetup',
+        ]);
+        allServerConnections.allowInternally(Port.tcp(portsConfig.frontend.rpc.membershipPort));
+        allServerConnections.allowInternally(Port.tcp(portsConfig.matching.rpc.membershipPort));
+        allServerConnections.allowInternally(Port.tcp(portsConfig.history.rpc.membershipPort));
+        allServerConnections.allowInternally(Port.tcp(portsConfig.worker.rpc.membershipPort));
+
+        this.rolesConnections = {
+            frontend: frontendConnections,
+            history: historyConnections,
+            matching: matchingConnections,
+            worker: workerConnections,
+            web: webConnections,
+        };
+    }
+
+    public get connections(): Connections {
+        return this.rolesConnections.frontend;
     }
 }

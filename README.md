@@ -57,7 +57,7 @@ const cloudMapNamespace = new PrivateDnsNamespace(stack, 'CloudMapNamespace', {
     vpc: vpc,
 });
 
-new TemporalCluster(stack, 'TemporalCluster', {
+const temporalCluster = new TemporalCluster(stack, 'TemporalCluster', {
     vpc,
     cloudMapRegistration: {
         namespace: cloudMapNamespace,
@@ -65,6 +65,10 @@ new TemporalCluster(stack, 'TemporalCluster', {
     },
     removalPolicy: RemovalPolicy.DESTROY,
 });
+
+//
+// temporalCluster.connections.allowDefaultPortFromAnyIpv4();
+// temporalCluster.roleConnections.web.allowDefaultPortFromAnyIpv4();
 
 app.synth();
 ```

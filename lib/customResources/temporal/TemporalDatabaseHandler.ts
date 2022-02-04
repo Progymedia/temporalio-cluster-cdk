@@ -1,5 +1,5 @@
 import { CdkCustomResourceEvent, CdkCustomResourceResponse } from 'aws-lambda';
-import { execFileSync, execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import waitPort from 'wait-port';
 import { SecretsManager } from 'aws-sdk';
 
@@ -12,6 +12,12 @@ export interface ITemporalDatabaseResourceProperties {
     readonly DatastoreSecretId: string;
     readonly DatabaseName: string;
     readonly SchemaType: 'main' | 'visibility';
+
+    // TemporalVersion is not actually used by this lambda. Database schema
+    // versions are not related to temporal software versions. Still, Temporal
+    // version is required in order to ensure that the resource gets updated
+    // whenever the version of Temporal changes. This is how we get the
+    // opportunity to update database schemas.
     readonly TemporalVersion: string;
 }
 
