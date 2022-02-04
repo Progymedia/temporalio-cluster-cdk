@@ -18,7 +18,7 @@ export class TemporalVersion {
     }
 
     public get containerImages() {
-        const prefix = this.customizations.repositoryBase ?? '';
+        const prefix = this.customizations?.repositoryBase ?? '';
 
         // FIXME: Rethink how we handle versionning in this class. Not all components have the same version
         return {
