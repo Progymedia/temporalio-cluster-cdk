@@ -139,12 +139,12 @@ function upgradeDatabase(resourceProps: IResolvedTemporalDatabaseResourceProps) 
         }
 
         case 'cassandra': {
-            const schemaDir = `/opt/temporal/schema/cassandra/${type}/versioned`;
+            // const schemaDir = `/opt/temporal/schema/cassandra/${type}/versioned`;
             throw new Error('upgradeDatabase(cassandra) is not yet implemented');
         }
 
         case 'elasticsearch': {
-            const schemaDir = `/opt/temporal/schema/elasticsearch/visibility/versioned`;
+            // const schemaDir = `/opt/temporal/schema/elasticsearch/visibility/versioned`;
             throw new Error('upgradeDatabase(elasticsearch) is not yet implemented');
         }
     }

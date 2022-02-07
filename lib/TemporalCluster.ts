@@ -133,8 +133,8 @@ export class TemporalCluster extends Construct implements IConnectable {
         this.configEfs = this.setupConfigFileSystem(clusterProps, this.temporalConfig);
 
         this.services = {
-            // FIXME: Replace the auto-setup image by CustomResources that only runs setup tasks
-            // single: null, // new SingleService(this, { machine: servicesProps.single.machine }),
+            // FIXME: Add a config property to determine if must setup an all-in-one container, or a 4 containers cluster
+            // single: new SingleService(this, { machine: servicesProps.single.machine }),
 
             frontend: new FrontendService(this, { machine: servicesProps.frontend.machine }),
             matching: new MatchingService(this, { machine: servicesProps.matching.machine }),
@@ -147,7 +147,7 @@ export class TemporalCluster extends Construct implements IConnectable {
         this.wireUpNetworkAuthorizations({ main: mainDatabase, visibility: visibilityDatabase });
 
         if (clusterProps.cloudMapRegistration) {
-            const cloudMapService = this.services.frontend.fargateService.enableCloudMap({
+            this.services.frontend.fargateService.enableCloudMap({
                 name: clusterProps.cloudMapRegistration?.serviceName,
                 cloudMapNamespace: clusterProps.cloudMapRegistration?.namespace,
                 dnsRecordType: DnsRecordType.A,
