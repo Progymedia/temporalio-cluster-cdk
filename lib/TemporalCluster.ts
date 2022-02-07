@@ -144,6 +144,8 @@ export class TemporalCluster extends Construct implements IConnectable {
             web: servicesProps.web.enabled ? new WebService(this, { machine: servicesProps.web.machine }) : undefined,
         };
 
+        this.wireUpNetworkAuthorizations({ main: mainDatabase, visibility: visibilityDatabase });
+
         if (clusterProps.cloudMapRegistration) {
             const cloudMapService = this.services.frontend.fargateService.enableCloudMap({
                 name: clusterProps.cloudMapRegistration?.serviceName,
@@ -151,8 +153,6 @@ export class TemporalCluster extends Construct implements IConnectable {
                 dnsRecordType: DnsRecordType.A,
             });
         }
-
-        this.wireUpNetworkAuthorizations({ main: mainDatabase, visibility: visibilityDatabase });
     }
 
     // FIXME: Refactor this
