@@ -109,6 +109,8 @@ export class TemporalCluster extends Construct implements IConnectable {
 
         const servicesProps = this.resolveServiceProps(clusterProps.services);
 
+        this.ecsCluster = this.getOrCreateEcsCluster(clusterProps);
+
         // FIXME: Add support for mixed datastores configuration (ie. SQL+Cassandra or SQL+ES)
         const datastore = this.getOrCreateDatastore(clusterProps);
 
@@ -127,8 +129,6 @@ export class TemporalCluster extends Construct implements IConnectable {
             removalPolicy: clusterProps.removalPolicy,
         });
         this.temporalConfig.attachDatabase(visibilityDatabase);
-
-        this.ecsCluster = this.getOrCreateEcsCluster(clusterProps);
 
         this.configEfs = this.setupConfigFileSystem(clusterProps, this.temporalConfig);
 
