@@ -25,7 +25,6 @@
     },
     "dependencies": {
         "@babel/core": "^7.17.2",
-        "aws-cdk-lib": "^2.8.0",
         "aws-sdk": "^2.1061.0",
         "babel-loader": "^8.2.3",
         "lodash": "^4.17.21",
