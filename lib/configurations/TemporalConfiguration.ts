@@ -1,7 +1,7 @@
 import { Token } from 'aws-cdk-lib';
 import { Secret } from 'aws-cdk-lib/aws-ecs';
 import YAML from 'yaml';
-import { TemporalDatabase } from '../customResources/temporal/TemporalDatabaseResource';
+import { TemporalDatabase } from '../customResources/temporal/TemporalDatabase';
 
 export class TemporalConfiguration {
     public configuration = { ...baseTemporalConfiguration };

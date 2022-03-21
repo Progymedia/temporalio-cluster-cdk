@@ -22,7 +22,7 @@ import {
     WorkerService,
 } from './services/ServerServices';
 import { ITemporalServiceMachineProps } from './services/BaseService';
-import { TemporalDatabase } from './customResources/temporal/TemporalDatabaseResource';
+import { TemporalDatabase } from './customResources/temporal/TemporalDatabase';
 
 export interface ITemporalClusterProps {
     readonly clusterName?: string;
