@@ -1,6 +1,7 @@
 import { Token } from 'aws-cdk-lib';
 import { Secret } from 'aws-cdk-lib/aws-ecs';
 import YAML from 'yaml';
+import { TemporalCluster } from '..';
 import { TemporalDatabase } from '../customResources/temporal/TemporalDatabase';
 
 export class TemporalConfiguration {
@@ -9,6 +10,8 @@ export class TemporalConfiguration {
     public web = { ...baseWebConfiguration };
     private envVariables: { [k: string]: string };
     private secrets: { [k: string]: Secret };
+
+    constructor(private cluster: TemporalCluster) {}
 
     public toEnvironmentVariables(): { [k: string]: string } {
         return {
@@ -20,6 +23,7 @@ export class TemporalConfiguration {
             ...this.envVariables,
 
             DYNAMIC_CONFIG_FILE_PATH: '/etc/temporal/dynamic_config/dynamic_config.yaml',
+            PUBLIC_FRONTEND_ADDRESS: this.cluster.host,
         };
     }
 

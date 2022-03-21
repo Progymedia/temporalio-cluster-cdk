@@ -8,7 +8,7 @@ import {
     ITemporalDatastore,
 } from './TemporalDatastore';
 import { TemporalVersion } from './TemporalVersion';
-import { Lazy, Names, RemovalPolicy } from 'aws-cdk-lib';
+import { Annotations, Lazy, Names, RemovalPolicy } from 'aws-cdk-lib';
 import { FileSystem } from 'aws-cdk-lib/aws-efs';
 import { EfsFile } from './customResources/efsFileResource/EfsFileResource';
 import { TemporalConfiguration } from './configurations/TemporalConfiguration';
@@ -75,6 +75,7 @@ type TemporalNodeType = 'single' | 'frontend' | 'matching' | 'history' | 'worker
 
 export class TemporalCluster extends Construct implements IConnectable {
     public readonly name: string;
+    public readonly host: string;
 
     public readonly temporalVersion: TemporalVersion;
 
@@ -105,11 +106,20 @@ export class TemporalCluster extends Construct implements IConnectable {
 
         this.name = clusterProps.clusterName ?? Names.uniqueId(this);
         this.temporalVersion = clusterProps.temporalVersion ?? TemporalVersion.LATEST;
-        this.temporalConfig = new TemporalConfiguration();
+        this.temporalConfig = new TemporalConfiguration(this);
 
         const servicesProps = this.resolveServiceProps(clusterProps.services);
 
         this.ecsCluster = this.getOrCreateEcsCluster(clusterProps);
+
+        if (clusterProps.cloudMapRegistration) {
+            const serviceName = clusterProps.cloudMapRegistration.serviceName;
+            const namespaceName = clusterProps.cloudMapRegistration.namespace.namespaceName;
+            const port = this.temporalConfig.configuration.services.frontend.rpc.grpcPort;
+            this.host = `${serviceName}.${namespaceName}:${port}`;
+        } else {
+            Annotations.of(this).addError(`Can't get cluster's host unless cloudMapRegistration has been configured`);
+        }
 
         // FIXME: Add support for mixed datastores configuration (ie. SQL+Cassandra or SQL+ES)
         const datastore = this.getOrCreateDatastore(clusterProps);
