@@ -183,5 +183,10 @@ function execTemporalSqlTool(context: IResolvedTemporalDatabaseResourceProps, co
     execFileSync('/opt/temporal/bin/temporal-sql-tool', [...args, ...command], {
         encoding: 'utf-8',
         env,
+        stdio: [
+            'ignore', // ignore stdin
+            process.stderr, // redirect stdout to stderr
+            'inherit', // inherit stderr
+        ],
     });
 }
