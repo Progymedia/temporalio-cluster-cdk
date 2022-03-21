@@ -12,6 +12,9 @@
     "bugs": {
         "url": "https://github.com/Progymedia/temporalio-cluster-cdk/issues"
     },
+    "bin": {
+        "bundle-nodejs-temporal-worker": "./dist/nodejsWorkerBundling/prepareWorkerDocker.js"
+    },
     "scripts": {
         "clean": "rimraf dist/",
         "build": "yarn build:ts && yarn build:copyfiles",

@@ -9,6 +9,13 @@ export interface ITemporalNodejsWorkerImageProps {
     readonly externals?: (string | RegExp)[];
 }
 
+// FIXME: This is not working properly at this point.
+//
+// AssetStaging will "skip" when running 'cdk ls' or 'cdk destroy', causing a failure on
+// DockerImageAsset because the specified input directory does not contain a Dockerfile.
+// Also, how to properly determine assetHash, given the fact that we expect most of the
+// code being bundled to be elsewhere in the project (outside of entrypoint's directory)?
+// At this point, using this class is not recommanded.
 export class TemporalNodejsWorkerImage extends Construct {
     public readonly dockerImageAsset: DockerImageAsset;
 

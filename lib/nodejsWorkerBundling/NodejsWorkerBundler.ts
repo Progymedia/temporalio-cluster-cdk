@@ -18,8 +18,6 @@ export class NodejsWorkerBundler {
         private: true,
     };
 
-    private readonly optimize: boolean = true;
-
     constructor(opts: { entrypointPath: string; targetPath: string; externals?: (string | RegExp)[] }) {
         if (!path.isAbsolute(opts.entrypointPath)) throw new Error(`entrypointPath must be absolute`);
 
@@ -36,9 +34,7 @@ export class NodejsWorkerBundler {
 
             // @temporalio/core-bridge package contains native code. proto and commons are dependencies
             // of core-bridge; there is therefore no use in inlining them in the bundle.
-            /^@temporalio[/]core-bridge$/,
-            /^@temporalio[/]proto$/,
-            /^@temporalio[/]common$/,
+            /^@temporalio[/].*$/,
 
             ...(opts.externals ?? []).map(toRegExp),
         ];
@@ -115,9 +111,6 @@ export class NodejsWorkerBundler {
         const webpackConfig: webpack.Configuration = {
             resolve: {
                 extensions: ['.ts', '.js'],
-                alias: {
-                    ...(this.optimize ? { webpack: false } : {}),
-                },
             },
             target: 'node14.18',
             module: {
