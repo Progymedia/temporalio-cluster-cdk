@@ -1,7 +1,7 @@
 import { Construct } from 'constructs';
 import { Connections, IConnectable, IVpc, Port } from 'aws-cdk-lib/aws-ec2';
 import { AuroraMysqlEngineVersion, DatabaseClusterEngine } from 'aws-cdk-lib/aws-rds';
-import { Cluster, CpuArchitecture } from 'aws-cdk-lib/aws-ecs';
+import { Cluster, CpuArchitecture, ICluster } from 'aws-cdk-lib/aws-ecs';
 import {
     AuroraServerlessTemporalDatastore,
     IAuroraServerlessTemporalDatastoreProps,
@@ -29,7 +29,7 @@ export interface ITemporalClusterProps {
     readonly temporalVersion?: TemporalVersion;
 
     readonly vpc: IVpc;
-    readonly ecsCluster?: Cluster;
+    readonly ecsCluster?: ICluster;
 
     readonly removalPolicy?: RemovalPolicy;
 
@@ -80,7 +80,7 @@ export class TemporalCluster extends Construct implements IConnectable {
 
     // FIXME: Reconsider if it would be possible to not expose the following three publicly
     public readonly temporalConfig: TemporalConfiguration;
-    public readonly ecsCluster: Cluster;
+    public readonly ecsCluster: ICluster;
     public readonly configEfs: FileSystem;
 
     public readonly services: {
