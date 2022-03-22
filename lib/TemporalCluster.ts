@@ -288,6 +288,7 @@ export class TemporalCluster extends Construct implements IConnectable {
         historyConnections.allowToDefaultPort(databases.main.datastore);
 
         workerConnections.allowToDefaultPort(frontendConnections);
+        workerConnections.allowToDefaultPort(databases.main.datastore);
 
         webConnections.allowToDefaultPort(frontendConnections);
 

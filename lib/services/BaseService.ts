@@ -34,7 +34,7 @@ export interface ITemporalServiceVolumeProps {
 export interface IBaseTemporalServiceProps {
     readonly image: DockerImage;
     readonly machine: ITemporalServiceMachineProps;
-    readonly environement: { [key: string]: string };
+    readonly environment: { [key: string]: string };
     readonly secrets?: { [key: string]: Secret };
     readonly volumes: ITemporalServiceVolumeProps[];
     readonly exposedPorts: number[];
@@ -68,7 +68,7 @@ export abstract class BaseTemporalService extends Construct implements IConnecta
             containerName: `${cluster.name}-${id}`,
             image: ContainerImage.fromRegistry(props.image.image),
 
-            environment: props.environement,
+            environment: props.environment,
             secrets: props.secrets,
 
             logging: new AwsLogDriver({

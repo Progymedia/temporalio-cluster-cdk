@@ -8,7 +8,7 @@ export class SingleService extends BaseTemporalService {
         super(cluster, 'Single', {
             image: cluster.temporalVersion.containerImages.temporalServer,
             machine: props.machine,
-            environement: {
+            environment: {
                 SERVICES: 'frontend:history:matching:worker',
                 ...cluster.temporalConfig.toEnvironmentVariables(),
             },
@@ -46,7 +46,7 @@ export class FrontendService extends BaseTemporalService {
         super(cluster, 'Frontend', {
             image: cluster.temporalVersion.containerImages.temporalServer,
             machine: props.machine,
-            environement: {
+            environment: {
                 SERVICES: 'frontend',
                 ...cluster.temporalConfig.toEnvironmentVariables(),
             },
@@ -78,7 +78,7 @@ export class HistoryService extends BaseTemporalService {
         super(cluster, 'History', {
             image: cluster.temporalVersion.containerImages.temporalServer,
             machine: props.machine,
-            environement: {
+            environment: {
                 SERVICES: 'history',
                 ...cluster.temporalConfig.toEnvironmentVariables(),
             },
@@ -110,7 +110,7 @@ export class MatchingService extends BaseTemporalService {
         super(cluster, 'Matching', {
             image: cluster.temporalVersion.containerImages.temporalServer,
             machine: props.machine,
-            environement: {
+            environment: {
                 SERVICES: 'matching',
                 ...cluster.temporalConfig.toEnvironmentVariables(),
             },
@@ -142,9 +142,12 @@ export class WorkerService extends BaseTemporalService {
         super(cluster, 'Worker', {
             image: cluster.temporalVersion.containerImages.temporalServer,
             machine: props.machine,
-            environement: {
+            environment: {
                 SERVICES: 'worker',
                 ...cluster.temporalConfig.toEnvironmentVariables(),
+            },
+            secrets: {
+                ...cluster.temporalConfig.toSecrets(),
             },
             volumes: [
                 {
@@ -171,7 +174,7 @@ export class WebService extends BaseTemporalService {
         super(cluster, 'Web', {
             image: cluster.temporalVersion.containerImages.temporalWeb,
             machine: props.machine,
-            environement: {},
+            environment: {},
             volumes: [
                 {
                     name: 'web_config',
