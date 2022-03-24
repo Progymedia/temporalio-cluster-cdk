@@ -103,6 +103,9 @@ export abstract class BaseTemporalService extends Construct implements IConnecta
             // FIXME: Make this configurable
             vpcSubnets: { onePerAz: true, subnetType: SubnetType.PRIVATE_WITH_NAT },
             platformVersion: FargatePlatformVersion.VERSION1_4,
+
+            // Enable 'aws ecs exec' to this container
+            enableExecuteCommand: true,
         });
 
         // Grant network access from the fargate service to the EFS file system
