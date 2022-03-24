@@ -140,7 +140,8 @@ export class TemporalCluster extends Construct implements IConnectable {
         });
         this.temporalConfig.attachDatabase(visibilityDatabase);
 
-        this.configEfs = this.setupConfigFileSystem(clusterProps, this.temporalConfig);
+        const [configEfs, configEfsFiles] = this.setupConfigFileSystem(clusterProps, this.temporalConfig);
+        this.configEfs = configEfs;
 
         this.services = {
             // FIXME: Add a config property to determine if must setup an all-in-one container, or a 4 containers cluster
@@ -155,6 +156,8 @@ export class TemporalCluster extends Construct implements IConnectable {
         };
 
         this.wireUpNetworkAuthorizations({ main: mainDatabase, visibility: visibilityDatabase });
+
+        for (const configFile of configEfsFiles) this.services.frontend.fargateService.node.addDependency(configFile);
 
         if (clusterProps.cloudMapRegistration) {
             this.services.frontend.fargateService.enableCloudMap({
@@ -238,21 +241,21 @@ export class TemporalCluster extends Construct implements IConnectable {
         //     contents: Lazy.string({ produce: () => temporalConfig.stringifyConfiguration() }),
         // });
 
-        new EfsFile(this, 'TemporalDynamicConfig', {
+        const dynamicConfigFile = new EfsFile(this, 'TemporalDynamicConfig', {
             fileSystem: configEfs,
             path: `/temporal/dynamic_config/dynamic_config.yaml`,
             vpc: props.vpc,
             contents: Lazy.string({ produce: () => temporalConfig.stringifyDynamic() }),
         });
 
-        new EfsFile(this, 'TemporalWebConfig', {
+        const webConfigFile = new EfsFile(this, 'TemporalWebConfig', {
             fileSystem: configEfs,
             path: `/temporal/web_config/web_config.yaml`,
             vpc: props.vpc,
             contents: Lazy.string({ produce: () => temporalConfig.stringifyWeb() }),
         });
 
-        return configEfs;
+        return [configEfs, [dynamicConfigFile, webConfigFile]] as const;
     }
 
     private wireUpNetworkAuthorizations(databases: { main: TemporalDatabase; visibility: TemporalDatabase }) {

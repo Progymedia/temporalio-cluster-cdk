@@ -1,4 +1,4 @@
-import { Construct } from 'constructs';
+import { Construct, IDependable } from 'constructs';
 import { Connections, IConnectable, IVpc, SubnetSelection } from 'aws-cdk-lib/aws-ec2';
 import {
     IClusterEngine,
@@ -9,7 +9,7 @@ import {
 import { ISecret } from 'aws-cdk-lib/aws-secretsmanager';
 import { RemovalPolicy } from 'aws-cdk-lib';
 
-export interface ITemporalDatastore extends IConnectable {
+export interface ITemporalDatastore extends IConnectable, IDependable {
     readonly plugin: 'mysql' | 'postgres' | 'cassandra' | 'elasticsearch';
     readonly host: string;
     readonly port: number;

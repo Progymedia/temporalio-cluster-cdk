@@ -22,7 +22,7 @@ export class TemporalDatabase extends Construct {
 
         const provider = TemporalDatabaseProvider.getOrCreate(cluster, props.datastore);
 
-        new CustomResource(this, 'Resource', {
+        const resource = new CustomResource(this, 'Resource', {
             serviceToken: provider,
             resourceType: 'Custom::TemporalSchema',
             properties: <ITemporalDatabaseResourceProperties>{
@@ -36,6 +36,7 @@ export class TemporalDatabase extends Construct {
             },
             removalPolicy: props.removalPolicy ?? RemovalPolicy.RETAIN,
         });
+        resource.node.addDependency(props.datastore);
 
         this.datastore = props.datastore;
         this.databaseName = props.databaseName;

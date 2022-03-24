@@ -1,4 +1,4 @@
-import { CustomResource, RemovalPolicy } from 'aws-cdk-lib';
+import { CustomResource } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { TemporalCluster } from '../..';
 import { ITemporalNamespaceResourceProperties } from './TemporalNamespaceHandler';
@@ -12,7 +12,7 @@ export class TemporalNamespace extends Construct {
 
         const provider = TemporalNamespaceProvider.getOrCreate(cluster);
 
-        new CustomResource(this, 'Resource', {
+        const resource = new CustomResource(this, 'Resource', {
             serviceToken: provider,
             resourceType: 'Custom::TemporalNamespace',
             properties: <ITemporalNamespaceResourceProperties>{
@@ -20,6 +20,7 @@ export class TemporalNamespace extends Construct {
                 NamespaceName: name,
             },
         });
+        resource.node.addDependency(cluster.services.frontend.fargateService);
 
         this.name = name;
     }
