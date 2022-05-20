@@ -4,6 +4,7 @@ import * as realFS from 'fs';
 import { bundleWorkflowCode } from '@temporalio/worker';
 import { temporalWorkflowsBundlingBabelPlugin, WorkflowsTransformFunc } from './babelPlugin';
 import path from 'path';
+import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin';
 
 // FIXME: Evaluate the pertinance of contributing this file to @temporalio/worker once fully validated
 export class NodejsWorkerBundler {
@@ -111,8 +112,13 @@ export class NodejsWorkerBundler {
         const webpackConfig: webpack.Configuration = {
             resolve: {
                 extensions: ['.ts', '.js'],
+                plugins: [
+                    new TsconfigPathsPlugin({
+                        logLevel: 'INFO',
+                    }),
+                ],
             },
-            target: 'node14.18',
+            target: 'node16.15',
             module: {
                 rules: [
                     {
@@ -120,25 +126,26 @@ export class NodejsWorkerBundler {
                         exclude: /node_modules/,
                         use: [
                             {
-                                loader: 'babel-loader',
+                                loader: require.resolve('babel-loader'),
                                 options: {
                                     plugins: [[temporalWorkflowsBundlingBabelPlugin, { workflowsTransform }]],
                                 },
                             },
                             {
-                                loader: 'ts-loader',
+                                loader: require.resolve('ts-loader'),
                                 options: {
                                     compilerOptions: {
                                         // Retain import statements so that they can be easily analyzed by the babel plugin
                                         module: 'es2020',
                                     },
+                                    projectReferences: true,
                                 },
                             },
                         ],
                     },
                 ],
             },
-            entry: [entry],
+            entry: entry,
             mode: 'development',
             devtool: 'eval-source-map',
             output: {
