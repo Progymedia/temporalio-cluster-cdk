@@ -20,7 +20,11 @@ export class TemporalVersion {
     public static V1_15_1 = new TemporalVersion('1.15.1');
     public static V1_15_2 = new TemporalVersion('1.15.2');
 
-    public static LATEST = TemporalVersion.V1_15_2;
+    public static V1_16_0 = new TemporalVersion('1.16.0');
+    public static V1_16_1 = new TemporalVersion('1.16.1');
+    public static V1_16_2 = new TemporalVersion('1.16.2');
+
+    public static LATEST = TemporalVersion.V1_16_2;
 
     private constructor(public version: string, private customizations?: { repositoryBase: string }) {
         // FIXME: Assert that (if defined), repositoryBase ends with /
