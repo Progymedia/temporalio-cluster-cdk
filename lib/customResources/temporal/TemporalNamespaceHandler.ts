@@ -67,7 +67,9 @@ function createNamespace(resourceProps: IResolvedTemporalNamespaceResourceProps)
 
 function execTctlTool(context: IResolvedTemporalNamespaceResourceProps, command: string[]) {
     const args = [];
-    const env = {};
+    const env = {
+        HOME: '/tmp',
+    };
 
     args.push('--address', `${context.temporalHost}`);
     args.push('--auto_confirm');
